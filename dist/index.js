@@ -40,12 +40,12 @@ var WalletProvider = class {
   getPrincipal = () => {
     return this.identity.getPrincipal();
   };
-  createActor = async (idlFactory4, canisterId, fetchRootKey = false) => {
+  createActor = async (idlFactory5, canisterId, fetchRootKey = false) => {
     const agent = await this.createAgent();
     if (fetchRootKey) {
       await agent.fetchRootKey();
     }
-    return Actor.createActor(idlFactory4, {
+    return Actor.createActor(idlFactory5, {
       agent,
       canisterId
     });
@@ -79,7 +79,7 @@ var icpWalletProvider = {
     }
   }
 };
-var createAnonymousActor = async (idlFactory4, canisterId, host = "https://ic0.app", fetchRootKey = false) => {
+var createAnonymousActor = async (idlFactory5, canisterId, host = "https://ic0.app", fetchRootKey = false) => {
   const anonymousAgent = new HttpAgent({
     host,
     retryTimes: 1,
@@ -88,7 +88,7 @@ var createAnonymousActor = async (idlFactory4, canisterId, host = "https://ic0.a
   if (fetchRootKey) {
     await anonymousAgent.fetchRootKey();
   }
-  return Actor.createActor(idlFactory4, {
+  return Actor.createActor(idlFactory5, {
     agent: anonymousAgent,
     canisterId
   });
@@ -900,6 +900,322 @@ ${contentTrimmed}`;
   }
 };
 
+// src/constants/icpLedgers.ts
+var MAINNET_ICRC1_LEDGERS = [
+  {
+    id: "ryjl3-tyaaa-aaaaa-aaaba-cai",
+    symbol: "ICP",
+    name: "Internet Computer",
+    decimals: 8,
+    category: "native"
+  },
+  {
+    id: "mxzaz-hqaaa-aaaar-qaada-cai",
+    symbol: "ckBTC",
+    name: "Chain-key Bitcoin",
+    decimals: 8,
+    category: "chain-key"
+  },
+  {
+    id: "ss2fx-dyaaa-aaaar-qacoq-cai",
+    symbol: "ckETH",
+    name: "Chain-key Ethereum",
+    decimals: 18,
+    category: "chain-key"
+  },
+  {
+    id: "xevnm-gaaaa-aaaar-qafnq-cai",
+    symbol: "ckUSDC",
+    name: "Chain-key USDC",
+    decimals: 6,
+    category: "chain-key"
+  },
+  {
+    id: "5xnja-6aaaa-aaaan-qad4a-cai",
+    symbol: "WICP",
+    name: "Wrapped ICP (legacy swap liquidity)",
+    decimals: 8,
+    category: "dex-wrapper"
+  },
+  {
+    id: "o7oak-iyaaa-aaaaq-aadzq-cai",
+    symbol: "KONG",
+    name: "KongSwap token",
+    decimals: 8,
+    category: "dex"
+  }
+];
+
+// src/utils/ic/icrc1Balance.ts
+import { Actor as Actor2, HttpAgent as HttpAgent2 } from "@dfinity/agent";
+import { Principal as Principal2 } from "@dfinity/principal";
+var DEFAULT_HOST = process.env.ICP_HOST || "https://icp0.io";
+var idlFactory4 = ({ IDL }) => IDL.Service({
+  icrc1_balance_of: IDL.Query(
+    [
+      IDL.Record({
+        owner: IDL.Principal,
+        subaccount: IDL.Opt(IDL.Vec(IDL.Nat8))
+      })
+    ],
+    IDL.Nat
+  ),
+  icrc1_decimals: IDL.Query([], IDL.Nat8),
+  icrc1_symbol: IDL.Query([], IDL.Text)
+});
+async function createIcrc1LedgerActor(canisterId, host = DEFAULT_HOST) {
+  const agent = new HttpAgent2({ host, retryTimes: 2 });
+  return Actor2.createActor(idlFactory4, {
+    agent,
+    canisterId
+  });
+}
+async function icrc1BalanceOf(ledgerCanisterId, ownerPrincipalText, host) {
+  const owner = Principal2.fromText(ownerPrincipalText.trim());
+  const actor = await createIcrc1LedgerActor(ledgerCanisterId, host);
+  return actor.icrc1_balance_of({
+    owner,
+    subaccount: []
+  });
+}
+
+// src/utils/ic/fetchPortfolio.ts
+function formatBalance(raw, decimals) {
+  if (decimals <= 0) return raw.toString();
+  const base = BigInt(10) ** BigInt(decimals);
+  const whole = raw / base;
+  const frac = raw % base;
+  if (frac === 0n) return whole.toString();
+  const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
+  return fracStr ? `${whole}.${fracStr}` : whole.toString();
+}
+async function fetchIcrc1Portfolio(ownerPrincipalText, ledgers = MAINNET_ICRC1_LEDGERS, host) {
+  const rows = [];
+  for (const L of ledgers) {
+    try {
+      const bal = await icrc1BalanceOf(L.id, ownerPrincipalText, host);
+      rows.push({
+        ledgerId: L.id,
+        symbol: L.symbol,
+        name: L.name,
+        decimals: L.decimals,
+        balanceRaw: bal.toString(),
+        balanceFormatted: formatBalance(bal, L.decimals),
+        category: L.category
+      });
+    } catch {
+      rows.push({
+        ledgerId: L.id,
+        symbol: L.symbol,
+        name: L.name,
+        decimals: L.decimals,
+        balanceRaw: "0",
+        balanceFormatted: "\u2014",
+        category: L.category
+      });
+    }
+  }
+  return rows;
+}
+
+// src/actions/queryIcrcPortfolio.ts
+var ICP_HOST2 = process.env.ICP_HOST || "https://icp0.io";
+function extractPrincipal(text) {
+  var _a;
+  const m = text.match(
+    /\b([2-9a-z]{5,}-[2-9a-z-]+(?:-[2-9a-z-]+){2,})\b/i
+  );
+  return ((_a = m == null ? void 0 : m[1]) == null ? void 0 : _a.trim()) ?? null;
+}
+var executeQueryIcrcPortfolio = {
+  name: "QUERY_ICRC_PORTFOLIO",
+  similes: [
+    "ICP_PORTFOLIO",
+    "ICRC_BALANCES",
+    "MY_ICP_TOKENS",
+    "LIST_IC_TOKENS",
+    "CKBTC_BALANCE",
+    "CHECK_ICP_HOLDINGS"
+  ],
+  description: "Fetch ICRC-1 balances for a principal across known mainnet ledgers (ICP, ckBTC, ckETH, ckUSDC, WICP, KONG). Use when the user asks for ICP token holdings, portfolio on Internet Computer, or ck-token balances. Requires a textual Principal ID unless the agent wallet key is configured (then uses that principal).",
+  validate: async (_runtime, message) => {
+    var _a;
+    const raw = ((_a = message == null ? void 0 : message.content) == null ? void 0 : _a.text) || "";
+    if (extractPrincipal(raw)) return true;
+    const text = raw.toLowerCase();
+    const ecosystem = [
+      "icrc",
+      "internet computer",
+      "ckbtc",
+      "cketh",
+      "ckusdc",
+      "wicp",
+      "kong"
+    ];
+    if (!ecosystem.some((k) => text.includes(k)) && !text.includes("icp")) {
+      return false;
+    }
+    return [
+      "balance",
+      "portfolio",
+      "holding",
+      "ledger",
+      "token",
+      "tokens",
+      "how much",
+      "assets"
+    ].some((k) => text.includes(k));
+  },
+  handler: async (runtime, message, _state, options) => {
+    var _a;
+    const callback = options == null ? void 0 : options.callback;
+    const text = ((_a = message == null ? void 0 : message.content) == null ? void 0 : _a.text) || "";
+    let principal = extractPrincipal(text);
+    if (!principal) {
+      const prov = await icpWalletProvider.get(runtime, message, _state);
+      if (prov.principal) principal = prov.principal;
+    }
+    if (!principal) {
+      if (callback) {
+        await callback({
+          text: "Provide a textual **Principal** (e.g. `aaaaa-aa`) or configure `INTERNET_COMPUTER_PRIVATE_KEY` so I can use the agent\u2019s principal.",
+          action: executeQueryIcrcPortfolio
+        });
+      }
+      return true;
+    }
+    try {
+      const rows = await fetchIcrc1Portfolio(principal, void 0, ICP_HOST2);
+      const lines = rows.map(
+        (r) => `- **${r.symbol}** (${r.name}): \`${r.balanceFormatted}\` \u2014 ledger \`${r.ledgerId}\` (${r.category})`
+      );
+      const reply = `**ICRC-1 portfolio** for \`${principal}\`:
+
+${lines.join("\n")}
+
+_Swaps: use official [ICPSwap](https://app.icpswap.com) or [KongSwap](https://kongswap.io); verify URLs before signing._`;
+      if (callback) {
+        await callback({ text: reply, action: executeQueryIcrcPortfolio });
+      }
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (callback) {
+        await callback({
+          text: `Could not load IC portfolio: ${msg}`,
+          action: executeQueryIcrcPortfolio
+        });
+      }
+      return true;
+    }
+  }
+};
+
+// src/constants/icpStandards.ts
+var ICP_TOKEN_STANDARDS_SUMMARY = `
+## Internet Computer token & NFT standards (summary)
+
+### ICRC-1 \u2014 Fungible tokens (ledger)
+- **icrc1_balance_of**, **icrc1_transfer**, **icrc1_metadata**, **icrc1_supported_standards**
+- Subaccounts: 32-byte optional subaccount per principal.
+- Most \u201CICP ecosystem tokens\u201D you trade are ICRC-1 ledgers.
+
+### ICRC-2 \u2014 Approve / transfer_from
+- **icrc2_allowance**, **icrc2_approve**, **icrc2_transfer_from**
+- Used by DEX routers (e.g. swap paths that pull from your balance).
+- **Security:** only approve spenders you trust; prefer limited amounts & time bounds when the ledger supports them.
+
+### ICRC-3 \u2014 Transaction log & blocks (indexing)
+- Block/transaction structure for indexers and explorers; often paired with ICRC-1 ledgers.
+
+### Legacy NFT interfaces (still common)
+- **DIP721** and **EXT** \u2014 collection-specific; balances are per canister, not one global \u201CNFT ledger\u201D.
+- **Discovery:** use official collection canisters, marketplaces (e.g. Yumi, Entrepot history), or wallet UIs \u2014 there is no single chain-wide NFT enumeration API comparable to EVM indexers.
+
+### ICRC-7 / ICRC-37 (NFT direction)
+- Newer standards evolving for NFTs on ICP; adoption varies by collection.
+
+### Practical guidance for agents
+- **Read balances:** ICRC-1 **icrc1_balance_of** with (owner principal, subaccount) \u2014 anonymous query on public ledgers.
+- **Swaps:** route users to audited frontends (**ICPSwap**, **KongSwap**); never ask for seed phrases; signing stays in Plug / II / OISY.
+`.trim();
+
+// src/actions/queryIcpStandards.ts
+var executeQueryIcpStandards = {
+  name: "QUERY_ICP_TOKEN_STANDARDS",
+  similes: [
+    "ICRC_1_EXPLAIN",
+    "ICRC_2_EXPLAIN",
+    "ICP_NFT_STANDARDS",
+    "DIP721",
+    "WHAT_IS_ICRC"
+  ],
+  description: "Summarize Internet Computer token standards (ICRC-1/2/3, legacy NFT interfaces, ICRC-7/37) and safe practices for agents. Use when the user asks how IC tokens, approvals, or NFTs work on ICP.",
+  validate: async (_runtime, message) => {
+    var _a;
+    const text = (((_a = message == null ? void 0 : message.content) == null ? void 0 : _a.text) || "").toLowerCase();
+    return text.includes("icrc") || text.includes("token standard") || text.includes("dip721") || text.includes("nft") && text.includes("icp") || text.includes("internet computer") && text.includes("token");
+  },
+  handler: async (_runtime, _message, _state, options) => {
+    const callback = options == null ? void 0 : options.callback;
+    if (callback) {
+      await callback({
+        text: ICP_TOKEN_STANDARDS_SUMMARY,
+        action: executeQueryIcpStandards
+      });
+    }
+    return true;
+  }
+};
+
+// src/constants/icpDefi.ts
+var ICPSWAP = {
+  name: "ICPSwap",
+  appUrl: "https://app.icpswap.com",
+  docsUrl: "https://github.com/ICPSwap-Labs",
+  /** Known WICP ledger (wrapped ICP) — verify before integrating transfers */
+  wicpLedger: "5xnja-6aaaa-aaaan-qad4a-cai"
+};
+var KONGSWAP = {
+  name: "KongSwap",
+  appUrl: "https://kongswap.io",
+  docsUrl: "https://kongswap.io/kb/documentation",
+  /** From KongSwap knowledge base — verify on dashboard */
+  mainDexCanister: "2ipq2-uqaaa-aaaar-qailq-cai",
+  kongLedger: "o7oak-iyaaa-aaaaq-aadzq-cai"
+};
+
+// src/actions/queryIcpDefi.ts
+var executeQueryIcpDefi = {
+  name: "QUERY_ICP_DEFI_DEX",
+  similes: [
+    "ICPSWAP",
+    "KONGSWAP",
+    "ICP_SWAP",
+    "ICP_DEX",
+    "WHERE_TO_SWAP_ICP"
+  ],
+  description: "Point users to official ICPSwap and KongSwap web apps, docs, and reference ledger IDs (WICP, KONG). Emphasize URL verification and wallet-only signing. Use when the user asks where to swap tokens on ICP.",
+  validate: async (_runtime, message) => {
+    var _a;
+    const text = (((_a = message == null ? void 0 : message.content) == null ? void 0 : _a.text) || "").toLowerCase();
+    return text.includes("icpswap") || text.includes("kongswap") || text.includes("kong swap") || text.includes("swap") && text.includes("icp") || text.includes("dex") && text.includes("ic");
+  },
+  handler: async (_runtime, _message, _state, options) => {
+    const callback = options == null ? void 0 : options.callback;
+    const reply = `**DEX entry points (verify domain in your browser before signing)**
+
+- **${ICPSWAP.name}** \u2014 ${ICPSWAP.appUrl} \xB7 docs: ${ICPSWAP.docsUrl} \xB7 WICP ledger reference: \`${ICPSWAP.wicpLedger}\`
+- **${KONGSWAP.name}** \u2014 ${KONGSWAP.appUrl} \xB7 docs: ${KONGSWAP.docsUrl} \xB7 KONG ledger reference: \`${KONGSWAP.kongLedger}\` \xB7 main dex canister (verify on their UI): \`${KONGSWAP.mainDexCanister}\`
+
+**Security:** Never share a seed phrase. Only approve token spenders you trust; prefer limited allowances. Phishing sites mimic DEX UIs \u2014 double-check the URL bar.`;
+    if (callback) {
+      await callback({ text: reply, action: executeQueryIcpDefi });
+    }
+    return true;
+  }
+};
+
 // src/index.ts
 var icpPlugin = {
   name: "icp",
@@ -909,7 +1225,10 @@ var icpPlugin = {
     executeCreateToken,
     executeQueryLaunchpad,
     executeQueryT3knoProducts,
-    executeDraftT3knoSocial
+    executeDraftT3knoSocial,
+    executeQueryIcrcPortfolio,
+    executeQueryIcpStandards,
+    executeQueryIcpDefi
   ],
   evaluators: []
 };

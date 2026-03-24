@@ -3,6 +3,9 @@ import { executeCreateToken } from "./actions/createToken";
 import { executeQueryLaunchpad } from "./actions/queryLaunchpad";
 import { executeQueryT3knoProducts } from "./actions/queryT3knoProducts";
 import { executeDraftT3knoSocial } from "./actions/draftT3knoSocial";
+import { executeQueryIcrcPortfolio } from "./actions/queryIcrcPortfolio";
+import { executeQueryIcpStandards } from "./actions/queryIcpStandards";
+import { executeQueryIcpDefi } from "./actions/queryIcpDefi";
 
 export const icpPlugin = {
     name: "icp",
@@ -13,6 +16,9 @@ export const icpPlugin = {
         executeQueryLaunchpad,
         executeQueryT3knoProducts,
         executeDraftT3knoSocial,
+        executeQueryIcrcPortfolio,
+        executeQueryIcpStandards,
+        executeQueryIcpDefi,
     ],
     evaluators: [],
 };
