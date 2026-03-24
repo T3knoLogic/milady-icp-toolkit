@@ -1,15 +1,10 @@
 import {
-    composeContext,
-    generateImage,
-    generateText,
-    generateObjectDeprecated,
-} from "@elizaos/core";
-import {
+    composePromptFromState,
+    ModelType,
     type ActionExample,
     type HandlerCallback,
     type IAgentRuntime,
     type Memory,
-    ModelClass,
     type State,
     type Action,
 } from "@elizaos/core";
@@ -65,20 +60,19 @@ async function generateTokenLogo(
 ): Promise<string | null> {
     const logoPrompt = `Create a fun and memorable logo for a cryptocurrency token with these characteristics: ${description}. The logo should be simple, iconic, and suitable for a meme token. Style: minimal, bold colors, crypto-themed.`;
 
-    const result = await generateImage(
-        {
+    try {
+        const result = await runtime.useModel(ModelType.IMAGE, {
             prompt: logoPrompt,
-            width: 512,
-            height: 512,
+            size: "512x512",
             count: 1,
-        },
-        runtime
-    );
+        }) as { url: string }[];
 
-    if (result.success && result.data && result.data.length > 0) {
-        return result.data[0];
+        if (result && result.length > 0 && result[0]?.url) {
+            return result[0].url;
+        }
+    } catch {
+        // Image provider may not be configured
     }
-
     return null;
 }
 
@@ -145,30 +139,63 @@ export const executeCreateToken: Action = {
             currentState = await runtime.updateRecentMessageState(currentState);
         }
 
-        const createTokenContext = composeContext({
+        const createTokenContext = composePromptFromState({
             state: currentState,
             template: createTokenTemplate,
         });
 
-        const response = await generateObjectDeprecated({
-            runtime,
-            context: createTokenContext,
-            modelClass: ModelClass.LARGE,
+        const createTokenSchema = {
+            type: "object" as const,
+            properties: {
+                name: { type: "string" },
+                symbol: { type: "string" },
+                description: { type: "string" },
+                logo: { type: "string" },
+                website: { type: "string" },
+                twitter: { type: "string" },
+                telegram: { type: "string" },
+            },
+            required: ["name", "symbol", "description"],
+        };
+
+        const responseRaw = await runtime.useModel(
+            ModelType.OBJECT_LARGE,
+            {
+                prompt: createTokenContext,
+                schema: createTokenSchema,
+                output: "object",
+            }
+        );
+
+        let parsed: Record<string, unknown> =
+            typeof responseRaw === "object" && responseRaw !== null
+                ? (responseRaw as Record<string, unknown>)
+                : {};
+        if (typeof responseRaw === "string") {
+            try {
+                const jsonMatch = responseRaw.match(/```(?:json)?\s*([\s\S]*?)```/) ?? [null, responseRaw];
+                const jsonStr = jsonMatch[1]?.trim() ?? responseRaw;
+                parsed = (JSON.parse(jsonStr) as Record<string, unknown>) ?? {};
+            } catch {
+                parsed = {};
+            }
+        }
+
+        const response = {
+            name: String(parsed?.name ?? ""),
+            symbol: String(parsed?.symbol ?? ""),
+            description: String(parsed?.description ?? ""),
+        };
+
+        const logoPromptContext = composePromptFromState({
+            state: { ...currentState, values: { ...(currentState.values ?? {}), description: response.description } },
+            template: logoPromptTemplate,
         });
 
-        const logoPromptContext = composeContext({
-            state,
-            template: logoPromptTemplate.replace(
-                "{{description}}",
-                response.description
-            ),
-        });
-
-        const logoPrompt = await generateText({
-            runtime,
-            context: logoPromptContext,
-            modelClass: ModelClass.LARGE,
-        });
+        const logoPrompt = await runtime.useModel(
+            ModelType.TEXT_LARGE,
+            { prompt: logoPromptContext }
+        ) as string;
 
         const logo = await generateTokenLogo(logoPrompt, runtime);
         if (!logo) {

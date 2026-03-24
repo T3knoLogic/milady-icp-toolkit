@@ -40,12 +40,12 @@ var WalletProvider = class {
   getPrincipal = () => {
     return this.identity.getPrincipal();
   };
-  createActor = async (idlFactory2, canisterId, fetchRootKey = false) => {
+  createActor = async (idlFactory4, canisterId, fetchRootKey = false) => {
     const agent = await this.createAgent();
     if (fetchRootKey) {
       await agent.fetchRootKey();
     }
-    return Actor.createActor(idlFactory2, {
+    return Actor.createActor(idlFactory4, {
       agent,
       canisterId
     });
@@ -79,16 +79,25 @@ var icpWalletProvider = {
     }
   }
 };
+var createAnonymousActor = async (idlFactory4, canisterId, host = "https://ic0.app", fetchRootKey = false) => {
+  const anonymousAgent = new HttpAgent({
+    host,
+    retryTimes: 1,
+    verifyQuerySignatures: false
+  });
+  if (fetchRootKey) {
+    await anonymousAgent.fetchRootKey();
+  }
+  return Actor.createActor(idlFactory4, {
+    agent: anonymousAgent,
+    canisterId
+  });
+};
 
 // src/actions/createToken.ts
 import {
-  composeContext,
-  generateImage,
-  generateText,
-  generateObjectDeprecated
-} from "@elizaos/core";
-import {
-  ModelClass
+  composePromptFromState,
+  ModelType
 } from "@elizaos/core";
 
 // src/canisters/pick-pump/index.did.ts
@@ -329,6 +338,12 @@ Example for a dog-themed token:
 var CANISTER_IDS = {
   PICK_PUMP: "tl65e-yyaaa-aaaah-aq2pa-cai"
 };
+var LAUNCHPAD_CANISTERS = {
+  WALLET: "tw5ow-tiaaa-aaaau-afpha-cai",
+  REGISTRY: "t76fk-faaaa-aaaau-afpgq-cai",
+  INTEGRATIONS: "ty7d6-iyaaa-aaaau-afpga-cai",
+  FRONTEND: "tnyst-jqaaa-aaaau-afpfq-cai"
+};
 
 // src/actions/createToken.ts
 async function createTokenTransaction(creator, tokenInfo) {
@@ -363,18 +378,18 @@ async function createTokenTransaction(creator, tokenInfo) {
   );
 }
 async function generateTokenLogo(description, runtime) {
+  var _a;
   const logoPrompt = `Create a fun and memorable logo for a cryptocurrency token with these characteristics: ${description}. The logo should be simple, iconic, and suitable for a meme token. Style: minimal, bold colors, crypto-themed.`;
-  const result = await generateImage(
-    {
+  try {
+    const result = await runtime.useModel(ModelType.IMAGE, {
       prompt: logoPrompt,
-      width: 512,
-      height: 512,
+      size: "512x512",
       count: 1
-    },
-    runtime
-  );
-  if (result.success && result.data && result.data.length > 0) {
-    return result.data[0];
+    });
+    if (result && result.length > 0 && ((_a = result[0]) == null ? void 0 : _a.url)) {
+      return result[0].url;
+    }
+  } catch {
   }
   return null;
 }
@@ -414,7 +429,7 @@ var executeCreateToken = {
     );
   },
   handler: async (runtime, message, state, _options, callback) => {
-    var _a;
+    var _a, _b;
     callback == null ? void 0 : callback({
       text: "\u{1F504} Creating meme token...",
       action: "CREATE_TOKEN",
@@ -426,33 +441,60 @@ var executeCreateToken = {
     } else {
       currentState = await runtime.updateRecentMessageState(currentState);
     }
-    const createTokenContext = composeContext({
+    const createTokenContext = composePromptFromState({
       state: currentState,
       template: createTokenTemplate
     });
-    const response = await generateObjectDeprecated({
-      runtime,
-      context: createTokenContext,
-      modelClass: ModelClass.LARGE
+    const createTokenSchema = {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        symbol: { type: "string" },
+        description: { type: "string" },
+        logo: { type: "string" },
+        website: { type: "string" },
+        twitter: { type: "string" },
+        telegram: { type: "string" }
+      },
+      required: ["name", "symbol", "description"]
+    };
+    const responseRaw = await runtime.useModel(
+      ModelType.OBJECT_LARGE,
+      {
+        prompt: createTokenContext,
+        schema: createTokenSchema,
+        output: "object"
+      }
+    );
+    let parsed = typeof responseRaw === "object" && responseRaw !== null ? responseRaw : {};
+    if (typeof responseRaw === "string") {
+      try {
+        const jsonMatch = responseRaw.match(/```(?:json)?\s*([\s\S]*?)```/) ?? [null, responseRaw];
+        const jsonStr = ((_a = jsonMatch[1]) == null ? void 0 : _a.trim()) ?? responseRaw;
+        parsed = JSON.parse(jsonStr) ?? {};
+      } catch {
+        parsed = {};
+      }
+    }
+    const response = {
+      name: String((parsed == null ? void 0 : parsed.name) ?? ""),
+      symbol: String((parsed == null ? void 0 : parsed.symbol) ?? ""),
+      description: String((parsed == null ? void 0 : parsed.description) ?? "")
+    };
+    const logoPromptContext = composePromptFromState({
+      state: { ...currentState, values: { ...currentState.values ?? {}, description: response.description } },
+      template: logoPromptTemplate
     });
-    const logoPromptContext = composeContext({
-      state,
-      template: logoPromptTemplate.replace(
-        "{{description}}",
-        response.description
-      )
-    });
-    const logoPrompt = await generateText({
-      runtime,
-      context: logoPromptContext,
-      modelClass: ModelClass.LARGE
-    });
+    const logoPrompt = await runtime.useModel(
+      ModelType.TEXT_LARGE,
+      { prompt: logoPromptContext }
+    );
     const logo = await generateTokenLogo(logoPrompt, runtime);
     if (!logo) {
       throw new Error("Failed to generate token logo");
     }
     const logoUploadResult = await uploadFileToWeb3Storage(logo);
-    if (!((_a = logoUploadResult.urls) == null ? void 0 : _a.gateway)) {
+    if (!((_b = logoUploadResult.urls) == null ? void 0 : _b.gateway)) {
       throw new Error("Failed to upload logo to Web3Storage");
     }
     try {
@@ -522,12 +564,353 @@ var executeCreateToken = {
   ]
 };
 
+// src/canisters/launchpad-wallet/index.did.ts
+var idlFactory2 = ({ IDL }) => {
+  const Result = IDL.Variant({ ok: IDL.Principal, err: IDL.Text });
+  const Result_1 = IDL.Variant({ ok: IDL.Null, err: IDL.Text });
+  const DepositResponse = IDL.Record({ accepted: IDL.Nat });
+  const TopUpResponse = IDL.Record({ accepted: IDL.Nat64 });
+  return IDL.Service({
+    create_canister_with_cycles: IDL.Func([IDL.Nat, IDL.Opt(IDL.Vec(IDL.Principal))], [Result], []),
+    deposit: IDL.Func([], [DepositResponse], []),
+    get_balance: IDL.Func([], [IDL.Nat], ["query"]),
+    top_up: IDL.Func([IDL.Principal, IDL.Nat], [Result_1], []),
+    wallet_receive: IDL.Func([], [TopUpResponse], []),
+    whoami: IDL.Func([], [IDL.Principal], ["query"])
+  });
+};
+
+// src/canisters/launchpad-registry/index.did.ts
+var idlFactory3 = ({ IDL }) => {
+  const CanisterInfo = IDL.Record({
+    created_at: IDL.Int,
+    id: IDL.Principal,
+    name: IDL.Text,
+    network: IDL.Text,
+    owner: IDL.Principal
+  });
+  const Result = IDL.Variant({ ok: IDL.Null, err: IDL.Text });
+  return IDL.Service({
+    get: IDL.Func([IDL.Principal], [IDL.Opt(CanisterInfo)], ["query"]),
+    list_all: IDL.Func([], [IDL.Vec(CanisterInfo)], ["query"]),
+    list_mine: IDL.Func([], [IDL.Vec(CanisterInfo)], ["query"]),
+    register: IDL.Func([IDL.Principal, IDL.Text, IDL.Text], [Result], []),
+    unregister: IDL.Func([IDL.Principal], [Result], []),
+    update_name: IDL.Func([IDL.Principal, IDL.Text], [Result], [])
+  });
+};
+
+// src/actions/queryLaunchpad.ts
+var ICP_HOST = process.env.ICP_HOST || "https://mainnet.dfinity.network";
+var executeQueryLaunchpad = {
+  name: "QUERY_ICP_LAUNCHPAD",
+  similes: [
+    "LAUNCHPAD_BALANCE",
+    "LAUNCHPAD_CYCLES",
+    "LIST_LAUNCHPAD_CANISTERS",
+    "QUERY_ICP_REGISTRY",
+    "ICP_CANISTERS",
+    "LAUNCHPAD_REGISTRY",
+    "CHECK_CYCLES"
+  ],
+  description: "Query the ICP Launchpad: get wallet cycles balance or list registered canisters on the IC mainnet. Use when the user asks about cycles, balance, registered canisters, or the Launchpad registry.",
+  validate: async (_runtime, message) => {
+    var _a;
+    const text = (((_a = message == null ? void 0 : message.content) == null ? void 0 : _a.text) || "").toLowerCase();
+    const keywords = [
+      "launchpad",
+      "cycles",
+      "balance",
+      "canister",
+      "registry",
+      "registered",
+      "icp",
+      "mainnet",
+      "wallet"
+    ];
+    return keywords.some((k) => text.includes(k));
+  },
+  handler: async (runtime, message, _state, options) => {
+    var _a;
+    const callback = options == null ? void 0 : options.callback;
+    const text = (((_a = message == null ? void 0 : message.content) == null ? void 0 : _a.text) || "").toLowerCase();
+    const wantsBalance = text.includes("balance") || text.includes("cycles") || text.includes("wallet");
+    const wantsRegistry = text.includes("registry") || text.includes("canister") || text.includes("registered") || text.includes("list");
+    try {
+      if (wantsBalance && !wantsRegistry) {
+        const walletActor = await createAnonymousActor(
+          idlFactory2,
+          LAUNCHPAD_CANISTERS.WALLET,
+          ICP_HOST,
+          false
+        );
+        const balance = await walletActor.get_balance();
+        const cycles = Number(balance) / 1e12;
+        const reply = `The ICP Launchpad wallet has **${cycles.toFixed(2)} T cycles** (${balance.toString()} raw).`;
+        if (callback) {
+          await callback({
+            text: reply,
+            action: executeQueryLaunchpad
+          });
+        }
+        return true;
+      }
+      if (wantsRegistry || !wantsBalance && !wantsRegistry) {
+        const registryActor = await createAnonymousActor(
+          idlFactory3,
+          LAUNCHPAD_CANISTERS.REGISTRY,
+          ICP_HOST,
+          false
+        );
+        const list = await registryActor.list_all();
+        const items = list.map((c) => {
+          var _a2, _b;
+          const idStr = typeof c.id === "string" ? c.id : ((_b = (_a2 = c.id) == null ? void 0 : _a2.toText) == null ? void 0 : _b.call(_a2)) ?? String(c.id);
+          return `- **${c.name}** \u2014 \`${idStr}\` (${c.network})`;
+        });
+        const reply = items.length > 0 ? `Registered canisters on ICP Launchpad:
+
+${items.join("\n")}` : "No canisters registered yet.";
+        if (callback) {
+          await callback({
+            text: reply,
+            action: executeQueryLaunchpad
+          });
+        }
+        return true;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (callback) {
+        await callback({
+          text: `Failed to query Launchpad: ${msg}`,
+          action: executeQueryLaunchpad
+        });
+      }
+    }
+    return false;
+  }
+};
+
+// src/knowledge/t3kno.ts
+import { readFileSync, existsSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+var _dir = dirname(fileURLToPath(import.meta.url));
+var pluginRoot = resolve(_dir, "..", "..");
+var repoRoot = resolve(pluginRoot, "..");
+var KNOWN_PATHS = [
+  resolve(process.cwd(), "knowledge", "T3KNO_LOGIC_PRODUCTS_AND_LINKS.md"),
+  resolve(process.cwd(), "../knowledge", "T3KNO_LOGIC_PRODUCTS_AND_LINKS.md"),
+  resolve(process.cwd(), "../../T3KNO_LOGIC_PRODUCTS_AND_LINKS.md"),
+  resolve(repoRoot, "T3KNO_LOGIC_PRODUCTS_AND_LINKS.md"),
+  resolve(pluginRoot, "..", "T3KNO_LOGIC_PRODUCTS_AND_LINKS.md")
+];
+function loadT3knoKnowledge() {
+  for (const p of KNOWN_PATHS) {
+    if (existsSync(p)) {
+      return readFileSync(p, "utf-8");
+    }
+  }
+  return FALLBACK_KNOWLEDGE;
+}
+var FALLBACK_KNOWLEDGE = `
+# T3kNo-Logic Products (fallback)
+
+- **NFT Matrix**: $99, 28+ chains, 1\u201310k NFTs, local desktop app. https://thenftmatrix.gumroad.com/l/fruzgy
+- **Machina**: $29, VST3 synth/sequencer. https://thenftmatrix.gumroad.com/l/mzkks
+- **Bonsai-Radio.xyz Widget**: Free, OBS-ready streaming player. https://thenftmatrix.gumroad.com/l/hrebyq
+- **Bazaar** (t3kno-logic.xyz): Merch store, RWA airdrop, Bonsai Collective. https://t3kno-logic.xyz
+
+**Critical:** NFT Matrix = NFT generator app. Bonsai Widget = streaming player. Different products.
+`;
+function validateProductMentions(text) {
+  const confusions = [];
+  const lower = text.toLowerCase();
+  if (lower.includes("nft matrix") && lower.includes("streaming")) {
+    confusions.push("NFT Matrix is the NFT generator app, NOT the streaming widget.");
+  }
+  if (lower.includes("bonsai widget") && lower.includes("nft generator")) {
+    confusions.push("Bonsai Widget is the streaming player, NOT the NFT generator.");
+  }
+  return { valid: confusions.length === 0, confusions };
+}
+
+// src/actions/queryT3knoProducts.ts
+var executeQueryT3knoProducts = {
+  name: "QUERY_T3KNO_PRODUCTS",
+  similes: [
+    "T3KNO_PRODUCTS",
+    "NFT_MATRIX",
+    "MACHINA",
+    "BAZAAR",
+    "BONSAI_WIDGET",
+    "T3KNO_LOGIC",
+    "PRODUCT_INFO"
+  ],
+  description: "When the user asks about T3kNo-Logic products (NFT Matrix, Machina, Bonsai Widget, Bazaar, t3kno-logic.xyz), return accurate product info with links. Do NOT confuse NFT Matrix (NFT generator) with Bonsai Widget (streaming player).",
+  validate: async (_runtime, message) => {
+    var _a;
+    const text = (((_a = message == null ? void 0 : message.content) == null ? void 0 : _a.text) || "").toLowerCase();
+    const keywords = [
+      "nft matrix",
+      "machina",
+      "bonsai widget",
+      "bazaar",
+      "t3kno",
+      "t3kno-logic",
+      "gumroad",
+      "enchanted bonsai"
+    ];
+    return keywords.some((k) => text.includes(k));
+  },
+  handler: async (_runtime, _message, _state, options) => {
+    const callback = options == null ? void 0 : options.callback;
+    try {
+      const knowledge = loadT3knoKnowledge();
+      const reply = `Here's the T3kNo-Logic product info:
+
+${knowledge}
+
+**One-line pitches:**
+- NFT Matrix: "Professional NFT creation. One app, $99, 28+ chains, 1\u201310k NFTs, local."
+- Machina: "Bio-cyber synth for electronic producers. $29, VST3."
+- Bonsai Widget: "Free Bonsai Radio player for streams and web. OBS-ready, MIT."
+- Bazaar: "T3kNo-Logic & Bonsai Collective merch. RWA-certified; free NFT airdrop with purchase."`;
+      if (callback) {
+        await callback({
+          text: reply,
+          action: executeQueryT3knoProducts
+        });
+      }
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (callback) {
+        await callback({
+          text: `Could not load product info: ${msg}`,
+          action: executeQueryT3knoProducts
+        });
+      }
+    }
+    return false;
+  }
+};
+
+// src/actions/draftT3knoSocial.ts
+import {
+  composePromptFromState as composePromptFromState2,
+  ModelType as ModelType2
+} from "@elizaos/core";
+var executeDraftT3knoSocial = {
+  name: "DRAFT_T3KNO_SOCIAL",
+  similes: [
+    "DRAFT_TWEET",
+    "DRAFT_DISCORD_POST",
+    "T3KNO_SOCIAL",
+    "SOCIAL_POST_DRAFT"
+  ],
+  description: "Draft a Twitter or Discord post for a T3kNo-Logic product (NFT Matrix, Machina, Bonsai Widget, Bazaar). Uses product knowledge; includes correct links. Max 280 chars for Twitter, 500 for Discord.",
+  validate: async (_runtime, message) => {
+    var _a;
+    const text = (((_a = message == null ? void 0 : message.content) == null ? void 0 : _a.text) || "").toLowerCase();
+    const keywords = [
+      "draft",
+      "tweet",
+      "post",
+      "discord",
+      "social",
+      "announce",
+      "promote",
+      "nft matrix",
+      "machina",
+      "bazaar",
+      "bonsai"
+    ];
+    return keywords.some((k) => text.includes(k));
+  },
+  handler: async (runtime, message, state, options) => {
+    var _a;
+    const callback = options == null ? void 0 : options.callback;
+    const text = (((_a = message == null ? void 0 : message.content) == null ? void 0 : _a.text) || "").toLowerCase();
+    const channel = text.includes("discord") ? "discord" : "twitter";
+    const maxLen = channel === "twitter" ? 280 : 500;
+    const productMatch = text.includes("nft matrix") ? "NFT Matrix" : text.includes("machina") ? "Machina" : text.includes("bonsai widget") ? "Bonsai Widget" : text.includes("bazaar") || text.includes("t3kno-logic") ? "Bazaar" : "NFT Matrix";
+    try {
+      const knowledge = loadT3knoKnowledge();
+      const template = `You are drafting a ${channel} post for T3kNo-Logic.
+
+PRODUCT KNOWLEDGE:
+${knowledge}
+
+PRODUCT: ${productMatch}
+
+Requirements:
+- ${channel === "twitter" ? "Max 280 chars. Punchy, one clear thought." : "Max 500 chars. Slightly more conversational."}
+- Include product link from knowledge
+- Do NOT confuse NFT Matrix (NFT generator) with Bonsai Widget (streaming player)
+- No hashtag spam
+- Output ONLY the post text, no meta-commentary`;
+      const currentState = state ?? await runtime.composeState(message);
+      const ctx = composePromptFromState2({
+        state: currentState,
+        template
+      });
+      const draft = await runtime.useModel(
+        ModelType2.TEXT_SMALL,
+        { prompt: ctx }
+      );
+      let contentTrimmed = (draft || "").trim();
+      if (contentTrimmed.length > maxLen) {
+        contentTrimmed = contentTrimmed.slice(0, maxLen - 3) + "...";
+      }
+      const validation = validateProductMentions(contentTrimmed);
+      if (!validation.valid) {
+        contentTrimmed += " [Flags: " + validation.confusions.join("; ") + "]";
+      }
+      const reply = `**Draft ${channel} post for ${productMatch}:**
+
+${contentTrimmed}`;
+      if (callback) {
+        await callback({
+          text: reply,
+          action: executeDraftT3knoSocial
+        });
+      }
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const fallback = {
+        "NFT Matrix": `NFT Matrix \u2014 professional NFT creation. 28+ chains, 1\u201310k NFTs, local. $99. https://thenftmatrix.gumroad.com/l/fruzgy`,
+        Machina: `Machina VST3 \u2014 bio-cyber synth for producers. $29. https://thenftmatrix.gumroad.com/l/mzkks`,
+        "Bonsai Widget": `Free Bonsai Radio streaming widget for Twitch/web. OBS-ready. https://thenftmatrix.gumroad.com/l/hrebyq`,
+        Bazaar: `T3kNo-Logic merch & Bonsai Collective. RWA-certified. Free NFT airdrop. https://t3kno-logic.xyz`
+      };
+      const content = fallback[productMatch] ?? `Draft for ${productMatch}. Add GEMINI_API_KEY for AI drafts.`;
+      if (callback) {
+        await callback({
+          text: `**Fallback draft:** ${content}
+
+(Error: ${msg})`,
+          action: executeDraftT3knoSocial
+        });
+      }
+    }
+    return false;
+  }
+};
+
 // src/index.ts
 var icpPlugin = {
   name: "icp",
-  description: "Internet Computer Protocol Plugin for Eliza",
+  description: "Internet Computer Protocol Plugin for Eliza \u2014 wallet, canisters, Launchpad, T3kNo products, whole IC network",
   providers: [icpWalletProvider],
-  actions: [executeCreateToken],
+  actions: [
+    executeCreateToken,
+    executeQueryLaunchpad,
+    executeQueryT3knoProducts,
+    executeDraftT3knoSocial
+  ],
   evaluators: []
 };
 var index_default = icpPlugin;

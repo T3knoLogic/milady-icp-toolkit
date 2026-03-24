@@ -1,235 +1,125 @@
-# @elizaos/plugin-icp
+# Milady ICP Toolkit (`@elizaos-plugins/plugin-icp`)
 
-Internet Computer Protocol (ICP) plugin for Eliza OS.
+**Milady ICP Toolkit** (repo: **`milady-icp-toolkit`**) is an [ElizaOS](https://github.com/elizaos/eliza) plugin for the [Internet Computer](https://internetcomputer.org/). It exposes wallet/canister tooling, Launchpad-style registry queries, ICRC-1-oriented flows, and T3kNo-Logic ecosystem helpers (products, social drafts).
+
+Maintained by **[T3kNo-Logic](https://github.com/T3kNoLogic)** for use with **Milady** and other ElizaOS agents.
+
+## Repository
+
+- **GitHub:** [github.com/T3kNoLogic/milady-icp-toolkit](https://github.com/T3kNoLogic/milady-icp-toolkit)  
+- **npm package name (install key):** `@elizaos-plugins/plugin-icp`
 
 ## Features
 
-- Create meme tokens on PickPump
-- Interact with ICP canisters
-- Handle ICRC-1 token standard
-- Manage ICP wallets and identities
-- Support for anonymous and authenticated calls
+- **CREATE_TOKEN** — Create tokens via configured flows (e.g. PickPump-style creation where implemented).
+- **QUERY_ICP_LAUNCHPAD** — Launchpad wallet cycles and registered canisters (anonymous query actors).
+- **QUERY_T3KNO_PRODUCTS** — T3kNo-Logic product reference (NFT Matrix, Machina, Bazaar, Bonsai Widget, etc.).
+- **DRAFT_T3KNO_SOCIAL** — Draft short social copy for ecosystem products (optional AI path where configured).
+- **ICP wallet provider** — Identity and canister interaction helpers (`@dfinity/*`).
 
-## Installation
+## Install
+
+### From GitHub (recommended until published to npm)
 
 ```bash
-pnpm install @elizaos/plugin-icp
+pnpm add github:T3kNoLogic/milady-icp-toolkit
+```
+
+Or add to `package.json`:
+
+```json
+{
+  "dependencies": {
+    "@elizaos-plugins/plugin-icp": "github:T3kNoLogic/milady-icp-toolkit"
+  }
+}
+```
+
+Then run `pnpm install` and ensure your bundler resolves the package name `@elizaos-plugins/plugin-icp`.
+
+### Monorepo / local path
+
+```json
+"@elizaos-plugins/plugin-icp": "file:../plugin-icp"
 ```
 
 ## Configuration
 
-The plugin requires the following environment variables:
+Set the agent’s Internet Computer identity via environment (see `agentConfig` in `package.json`):
 
 ```env
-INTERNET_COMPUTER_PRIVATE_KEY=<your-ed25519-private-key>
+INTERNET_COMPUTER_PRIVATE_KEY=<your-ed25519-private-key-hex-or-format-expected-by-plugin>
 ```
+
+Optional:
+
+```env
+ICP_HOST=https://mainnet.dfinity.network
+```
+
+Never commit keys. Use your host’s secret mechanism (env, vault, pairing).
 
 ## Usage
 
-### Import and Register
-
 ```typescript
-import { icpPlugin } from "@elizaos/plugin-icp";
+import { icpPlugin } from "@elizaos-plugins/plugin-icp";
 
-// Register the plugin with Eliza
-eliza.registerPlugin(icpPlugin);
+// Register with your ElizaOS runtime
+runtime.registerPlugin(icpPlugin);
 ```
 
-### Available Actions
+### Actions (examples)
 
-#### Create Token
+- *“What’s the Launchpad wallet cycles balance?”* → `QUERY_ICP_LAUNCHPAD`
+- *“List registered canisters in the Launchpad registry”* → `QUERY_ICP_LAUNCHPAD`
+- *“What T3kNo products should I mention?”* → `QUERY_T3KNO_PRODUCTS`
+- *“Draft a post for the Bazaar”* → `DRAFT_T3KNO_SOCIAL`
 
-Creates a new meme token on PickPump with AI-generated logo and description.
+## Related: Milady on ICP
 
-```typescript
-// Example usage in chat
-"Create a space cat token on PickPump";
-"Help me create a pizza-themed funny token on PP";
-```
+When Milady runs against the **milady_api** canister, many “ICP Toolkit” HTTP endpoints are also documented on-chain (e.g. `/api/ic/toolkit`). This repo is the **ElizaOS plugin** that runs inside the Node/Milady runtime; the canister complements it for hosted deployments.
 
-### Providers
-
-#### ICP Wallet Provider
-
-Manages ICP wallet operations and canister interactions.
-
-```typescript
-const { wallet } = await icpWalletProvider.get(runtime, message, state);
-```
-
-## Common Issues & Troubleshooting
-
-1. **Identity Creation Failures**
-
-    - Ensure private key is exactly 32 bytes
-    - Verify private key is properly hex-encoded
-    - Check if private key has correct permissions
-
-2. **Canister Interaction Issues**
-
-    - Verify canister ID is valid
-    - Ensure proper network configuration (mainnet/testnet)
-    - Check if canister is available and running
-
-3. **Transaction Failures**
-
-    - Verify sufficient balance for operation
-    - Check cycle balance for canister calls
-    - Ensure proper fee calculation
-
-4. **Authentication Problems**
-    - Verify identity is properly initialized
-    - Check if agent is configured correctly
-    - Ensure proper network connectivity
-
-## Security Best Practices
-
-1. **Key Management**
-
-    - Never expose private keys in code or logs
-    - Use environment variables for sensitive data
-    - Rotate keys periodically
-    - Use separate keys for development and production
-
-2. **Identity Security**
-
-    - Create separate identities for different purposes
-    - Limit identity permissions appropriately
-    - Monitor identity usage and access patterns
-
-3. **Canister Interaction Safety**
-
-    - Validate all input parameters
-    - Implement proper error handling
-    - Use query calls when possible to save cycles
-    - Implement rate limiting for calls
-
-4. **Network Security**
-    - Use secure endpoints
-    - Implement proper timeout handling
-    - Validate responses from canisters
-    - Handle network errors gracefully
-
-## API Reference
-
-### Types
-
-```typescript
-// Token Creation Arguments
-export type CreateMemeTokenArg = {
-    name: string;
-    symbol: string;
-    description: string;
-    logo: string;
-    twitter?: string;
-    website?: string;
-    telegram?: string;
-};
-
-// ICP Configuration
-export interface ICPConfig {
-    privateKey: string;
-    network?: "mainnet" | "testnet";
-}
-```
-
-### Utilities
-
-The plugin provides various utility functions for:
-
-- Principal/Account conversions
-- Candid type handling
-- Result/Variant unwrapping
-- Array/Hex conversions
-
-### Helper Functions
-
-```typescript
-// Convert principal to account
-principal2account(principal: string, subaccount?: number[]): string
-
-// Check if text is valid principal
-isPrincipalText(text: string): boolean
-
-// Create anonymous actor for public queries
-createAnonymousActor<T>(idlFactory, canisterId, host?)
-```
-
-## Development Guide
-
-### Setting Up Development Environment
-
-1. Clone the repository
-2. Install dependencies:
+## Build
 
 ```bash
 pnpm install
-```
-
-3. Build the plugin:
-
-```bash
 pnpm run build
 ```
 
-4. Run tests:
-
-```bash
-pnpm test
-```
-
-### Testing with Local Replica
-
-1. Start a local Internet Computer replica
-2. Configure environment for local testing
-3. Use test identities for development
-
-## Dependencies
-
-- @dfinity/agent: ^2.1.3
-- @dfinity/candid: ^2.1.3
-- @dfinity/identity: ^2.1.3
-- @dfinity/principal: ^2.1.3
-- @elizaos/core: workspace:\*
-
-## Future Enhancements
-
-- Support for additional canister standards
-- Enhanced error handling and recovery
-- Batch transaction support
-- Advanced identity management
-- Improved cycle management
-- Extended canister interaction capabilities
-
-## Contributing
-
-Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for more information.
-
-## Credits
-
-This plugin integrates with and builds upon several key technologies:
-
-- [Internet Computer](https://internetcomputer.org/): Decentralized cloud computing platform
-- [@dfinity/agent](https://www.npmjs.com/package/@dfinity/agent): ICP HTTP client and agent
-- [@dfinity/candid](https://www.npmjs.com/package/@dfinity/candid): Candid interface description language
-- [@dfinity/principal](https://www.npmjs.com/package/@dfinity/principal): Principal identifier handling
-- [@dfinity/identity](https://www.npmjs.com/package/@dfinity/identity): Identity management
-
-Special thanks to:
-
-- The DFINITY Foundation for developing the Internet Computer
-- The ICP Developer community
-- The DFINITY SDK maintainers
-- The PickPump team for meme token infrastructure
-- The Eliza community for their contributions and feedback
-
-For more information about Internet Computer capabilities:
-
-- [ICP Documentation](https://internetcomputer.org/docs/)
-- [DFINITY Developer Portal](https://smartcontracts.org/)
-- [ICP Dashboard](https://dashboard.internetcomputer.org/)
-- [Candid Documentation](https://internetcomputer.org/docs/current/developer-docs/build/candid/)
+Output: `dist/` (ESM + types).
 
 ## License
 
-This plugin is part of the Eliza project. See the main project repository for license information.
+MIT — see [LICENSE](./LICENSE).
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Publish `milady-icp-toolkit` under `T3kNoLogic` on GitHub
+
+If your local clone still has `origin` pointing at another org (e.g. a fork source), add your public remote and push:
+
+1. Create an **empty** repository on GitHub: `https://github.com/T3kNoLogic/milady-icp-toolkit` (no README/license wizard, or delete defaults after).
+2. In this directory:
+
+```bash
+git remote add t3kno https://github.com/T3kNoLogic/milady-icp-toolkit.git
+git push -u t3kno main
+```
+
+Optional: keep the old remote as `upstream` for syncing:
+
+```bash
+git remote rename origin upstream
+git remote add origin https://github.com/T3kNoLogic/milady-icp-toolkit.git
+git push -u origin main
+```
+
+After the repo exists, enable **Issues** and a **Security policy** in GitHub repo settings if you want community contributions.
+
+## Links
+
+- Internet Computer docs: [internetcomputer.org/docs](https://internetcomputer.org/docs/)
+- DFINITY agent-js: [@dfinity/agent](https://www.npmjs.com/package/@dfinity/agent)
+- T3kNo-Logic ecosystem: [t3kno-logic.xyz](https://t3kno-logic.xyz) (Bazaar & merch)
