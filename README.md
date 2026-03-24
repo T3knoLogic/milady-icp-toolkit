@@ -2,11 +2,11 @@
 
 **Milady ICP Toolkit** (repo: **`milady-icp-toolkit`**) is an [ElizaOS](https://github.com/elizaos/eliza) plugin for the [Internet Computer](https://internetcomputer.org/). It exposes wallet/canister tooling, Launchpad-style registry queries, ICRC-1-oriented flows, and T3kNo-Logic ecosystem helpers (products, social drafts).
 
-Maintained by **[T3kNo-Logic](https://github.com/T3kNoLogic)** for use with **Milady** and other ElizaOS agents.
+Maintained by **[T3kNo-Logic](https://github.com/T3knoLogic)** for use with **Milady** and other ElizaOS agents.
 
 ## Repository
 
-- **GitHub:** [github.com/T3kNoLogic/milady-icp-toolkit](https://github.com/T3kNoLogic/milady-icp-toolkit)  
+- **GitHub:** [github.com/T3knoLogic/milady-icp-toolkit](https://github.com/T3knoLogic/milady-icp-toolkit)  
 - **npm package name (install key):** `@elizaos-plugins/plugin-icp`
 
 ## Features
@@ -22,7 +22,7 @@ Maintained by **[T3kNo-Logic](https://github.com/T3kNoLogic)** for use with **Mi
 ### From GitHub (recommended until published to npm)
 
 ```bash
-pnpm add github:T3kNoLogic/milady-icp-toolkit
+pnpm add github:T3knoLogic/milady-icp-toolkit
 ```
 
 Or add to `package.json`:
@@ -30,7 +30,7 @@ Or add to `package.json`:
 ```json
 {
   "dependencies": {
-    "@elizaos-plugins/plugin-icp": "github:T3kNoLogic/milady-icp-toolkit"
+    "@elizaos-plugins/plugin-icp": "github:T3knoLogic/milady-icp-toolkit"
   }
 }
 ```
@@ -96,15 +96,15 @@ MIT — see [LICENSE](./LICENSE).
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-## Publish `milady-icp-toolkit` under `T3kNoLogic` on GitHub
+## Publish `milady-icp-toolkit` under `T3knoLogic` on GitHub
 
 If your local clone still has `origin` pointing at another org (e.g. a fork source), add your public remote and push:
 
-1. Create an **empty** repository on GitHub: `https://github.com/T3kNoLogic/milady-icp-toolkit` (no README/license wizard, or delete defaults after).
+1. Create an **empty** repository on GitHub: `https://github.com/T3knoLogic/milady-icp-toolkit` (no README/license wizard, or delete defaults after).
 2. In this directory:
 
 ```bash
-git remote add t3kno https://github.com/T3kNoLogic/milady-icp-toolkit.git
+git remote add t3kno https://github.com/T3knoLogic/milady-icp-toolkit.git
 git push -u t3kno main
 ```
 
@@ -112,7 +112,7 @@ Optional: keep the old remote as `upstream` for syncing:
 
 ```bash
 git remote rename origin upstream
-git remote add origin https://github.com/T3kNoLogic/milady-icp-toolkit.git
+git remote add origin https://github.com/T3knoLogic/milady-icp-toolkit.git
 git push -u origin main
 ```
 
