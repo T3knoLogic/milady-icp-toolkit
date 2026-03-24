@@ -174,6 +174,16 @@ pnpm run build
 
 Output: `dist/` (ESM + types).
 
+## Thank you
+
+<p align="center">
+  <img src="./docs/golden-bonsai-thanks.png" alt="Golden bonsai emblem" width="360" />
+</p>
+
+Thank you to the **Eliza Labs** team for building and stewarding the ElizaOS ecosystem that makes agents like Milady possible.
+
+Special thanks to **Daniel McCoy** and **Shawmakesmagic** for paving the way for the dreamers and visionaries—your work opened doors for everyone building on this stack.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).
