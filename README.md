@@ -103,44 +103,6 @@ Exported helper **`createAnonymousActor(idlFactory, canisterId, host?, fetchRoot
 | `INTEGRATIONS` | `ty7d6-iyaaa-aaaau-afpga-cai` | (reserved / ecosystem) |
 | `FRONTEND` | `tnyst-jqaaa-aaaau-afpfq-cai` | Launchpad UI canister reference |
 
----
-
-## Nuances & lessons learned (Milady + ICP)
-
-These are practical gotchas observed while shipping **Milady** (local Node runtime + **milady_api** on mainnet) and this plugin—not theoretical edge cases.
-
-1. **This plugin ≠ the on-chain “ICP Toolkit” HTTP API**  
-   **milady-icp-toolkit** runs inside **Node** with `@dfinity/agent`. The **milady_api** Motoko canister exposes REST routes (`/api/ic/toolkit`, `/api/icp/balance`, NNS, cycles, etc.) for **browser/static** Milady. Same *product name*, different execution environments; features overlap but are not 1:1.
-
-2. **`.env` / `env.local` vs canister secrets**  
-   Keys in a developer machine’s `.env` **do not** automatically appear on ICP. The hosted API stores `GOOGLE_API_KEY` / provider config in **canister stable state** via the app’s Settings. Pasting into Secrets on **mainnet** is required for Gemini (and similar) there.
-
-3. **Misleading “outcall failed” copy on canisters**  
-   IC **HTTPS outcalls** can trap for **consensus** (replicas disagree on raw response), **cycles**, **allowlisting**, or **bad URLs**. Generic errors that say “check cycles or API key” often masked **missing HTTP response transform** and **deprecated Gemini model IDs** (`gemini-2.0-flash` returning **404** while the key was valid). Fix pattern: **response `transform`** (e.g. strip headers) + **current model names** + **`x-goog-api-key`** header instead of long query URLs where applicable.
-
-4. **Cycles vs API key**  
-   `milady_api` reported **~10T+ cycles** while users still saw failures—proving **balance checks alone** are insufficient to diagnose LLM outcall issues.
-
-5. **Two default ICP hosts in one stack**  
-   `WalletProvider` defaults to **`https://ic0.app`**; `QUERY_ICP_LAUNCHPAD` uses **`https://mainnet.dfinity.network`** unless `ICP_HOST` is set. Both are mainnet-capable but not identical; for strict parity, set **`ICP_HOST`** explicitly in deployment docs.
-
-6. **Anonymous vs signed calls**  
-   Launchpad **read** paths intentionally avoid requiring a key so agents can answer “how many cycles?” in chat without wallet setup. **PickPump create** always needs **`INTERNET_COMPUTER_PRIVATE_KEY`**.
-
-7. **CREATE_TOKEN is the heaviest action**  
-   It chains **object LLM + text LLM + image + IPFS/Web3 upload + chain write**. A minimal deployment can still use **QUERY_*** and **T3kNo** actions without enabling full token creation.
-
-8. **T3kNo knowledge file is optional**  
-   Monorepos that place `T3KNO_LOGIC_PRODUCTS_AND_LINKS.md` at repo root get richer copy; otherwise the **embedded fallback** still enforces correct product boundaries (NFT Matrix vs Bonsai Widget).
-
-9. **Package name vs GitHub repo name**  
-   The install key remains **`@elizaos-plugins/plugin-icp`** for Eliza/Milady imports; the public repo is **`milady-icp-toolkit`** under **`T3knoLogic`** (GitHub normalizes org casing; use the URL GitHub shows after creation).
-
-10. **ElizaOS `@elizaos/core` version**  
-    `package.json` uses `"@elizaos/core": "next"`. Pin to a **released** core version when publishing to npm or for reproducible consumer builds.
-
----
-
 ## Install
 
 ### From GitHub (recommended until published to npm)
